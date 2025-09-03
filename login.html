@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 回声</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: #FDFBF8; 
+            color: #4A4A4A;
+            background-image: radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.04) 0%, #FDFBF8 40%);
+            background-attachment: fixed;
+        }
+        .bg-accent { background-color: #D97706; }
+        .accent-color { color: #D97706; }
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .form-container.hidden {
+            max-height: 0;
+            opacity: 0;
+            transform: translateY(-10px);
+            pointer-events: none;
+            margin-top: 0 !important;
+        }
+        .form-container {
+            max-height: 500px;
+            opacity: 1;
+            transform: translateY(0);
+            transition: all 0.4s ease-in-out;
+            overflow: hidden;
+        }
+        .modal-open { overflow: hidden; }
+        #notification-toast { position: fixed; bottom: -100px; right: 2rem; background-color: #22C55E; color: white; padding: 1rem 1.5rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); transition: bottom 0.5s ease-in-out; z-index: 100; }
+        #notification-toast.show { bottom: 2rem; }
+    </style>
+</head>
+<body class="antialiased flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-sm p-6 sm:p-8 login-card-container">
+        <header class="text-center mb-8">
+            <div class="w-20 h-20 mx-auto mb-4 text-amber-600">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <style>
+                        .echo-path { animation: draw 1.5s ease-out forwards; }
+                        #echo-path-1 { stroke-dasharray: 100; stroke-dashoffset: 100; animation-delay: 0s; }
+                        #echo-path-2 { stroke-dasharray: 70; stroke-dashoffset: 70; animation-delay: 0.2s; }
+                        #echo-path-3 { stroke-dasharray: 45; stroke-dashoffset: 45; animation-delay: 0.4s; }
+                        @keyframes draw { to { stroke-dashoffset: 0; } }
+                    </style>
+                    <path id="echo-path-1" class="echo-path" d="M32 4C48.464 4 61 16.536 61 33" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    <path id="echo-path-2" class="echo-path" d="M32 13C43.598 13 53 22.402 53 34" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.7"/>
+                    <path id="echo-path-3" class="echo-path" d="M32 22C38.6274 22 44 27.3726 44 34" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.4"/>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold accent-color tracking-wider">回声</h1>
+            <p class="text-sm text-gray-500 mt-2">登录以启用云同步</p>
+        </header>
+
+        <div class="bg-white/70 p-8 rounded-xl shadow-md border border-gray-200/80 space-y-6">
+            <button id="google-login-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-all flex items-center justify-center gap-3 text-base shadow-sm">
+                <svg class="w-5 h-5" viewBox="0 0 48 48"><g><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path><path fill="none" d="M0 0h48v48H0z"></path></g></svg>
+                使用 Google 登录
+            </button>
+
+            <div class="flex items-center">
+                <div class="flex-1 h-px bg-gray-200"></div>
+                <span class="px-3 text-xs text-gray-400">或</span>
+                <div class="flex-1 h-px bg-gray-200"></div>
+            </div>
+
+            <div>
+                <button id="show-email-form-btn" class="w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2">
+                    使用邮箱继续
+                </button>
+                <div id="form-container" class="form-container hidden">
+                    <form id="email-form" class="space-y-4">
+                        <div>
+                            <label for="email" class="block text-sm font-medium text-gray-700">邮箱</label>
+                            <input type="email" id="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring-accent py-3 px-4 text-base" placeholder="you@example.com" required>
+                        </div>
+                        <div>
+                            <label for="password" class="block text-sm font-medium text-gray-700">密码</label>
+                            <input type="password" id="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring-accent py-3 px-4 text-base" placeholder="至少6位" minlength="6" required>
+                        </div>
+                        <div class="flex gap-3">
+                            <button type="submit" class="flex-1 bg-accent text-white font-bold py-2 px-4 rounded-md hover:bg-amber-700 transition-all">登录</button>
+                            <button id="register-btn" type="button" class="flex-1 bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-md hover:bg-gray-300 transition-all">注册</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-xs text-gray-400 mt-8">登录表示你同意我们的服务条款与隐私政策。</p>
+    </div>
+
+    <div id="notification-toast"></div>
+    <div class="background-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+    </div>
+    <!-- 复用首页注入的 Firebase 配置对象 -->
+    <!-- 若独立打开该页面且未注入配置，可手动在此添加 window.__FIREBASE_CONFIG__ -->
+    <script>
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: "AIzaSyAsyCB4YtVqqDbo1HacFf3jSeKVvx9wStU",
+        authDomain: "gen-lang-client-0073922535.firebaseapp.com",
+        projectId: "gen-lang-client-0073922535",
+        storageBucket: "gen-lang-client-0073922535.firebasestorage.app",
+        messagingSenderId: "692030098795",
+        appId: "1:692030098795:web:c223e7f5ebd7b05a37502e",
+        measurementId: "G-EL465MFS0F"
+      };
+    </script>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
+
+        function showNotification(message) {
+            const el = document.getElementById('notification-toast');
+            el.textContent = message;
+            el.className = 'show bg-green-500';
+            setTimeout(() => el.classList.remove('show'), 3000);
+        }
+
+        function isFirebaseConfigured() {
+            return typeof window.__FIREBASE_CONFIG__ === 'object' && window.__FIREBASE_CONFIG__ && window.__FIREBASE_CONFIG__.apiKey;
+        }
+
+        let app = null; let auth = null;
+        function initFirebase() {
+            if (!isFirebaseConfigured()) {
+                console.error('[Echo] 未检测到 Firebase 配置。请在 index 注入 window.__FIREBASE_CONFIG__');
+                return;
+            }
+            app = initializeApp(window.__FIREBASE_CONFIG__);
+            auth = getAuth(app);
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // 登录成功后跳回首页
+                    window.location.href = 'echo.html';
+                }
+            });
+        }
+
+        function bindEvents() {
+            const emailForm = document.getElementById('email-form');
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+            const registerBtn = document.getElementById('register-btn');
+            const googleBtn = document.getElementById('google-login-btn');
+            const showEmailFormBtn = document.getElementById('show-email-form-btn');
+            const formContainer = document.getElementById('form-container');
+
+            showEmailFormBtn.addEventListener('click', () => {
+                showEmailFormBtn.style.display = 'none';
+                formContainer.classList.remove('hidden');
+            });
+
+            emailForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!auth) return;
+                try {
+                    await signInWithEmailAndPassword(auth, emailInput.value.trim(), passwordInput.value);
+                    showNotification('登录成功');
+                } catch (err) {
+                    console.error(err);
+                    showNotification('邮箱登录失败，请检查邮箱/密码');
+                }
+            });
+
+            registerBtn.addEventListener('click', async () => {
+                if (!auth) return;
+                try {
+                    await createUserWithEmailAndPassword(auth, emailInput.value.trim(), passwordInput.value);
+                    showNotification('注册并登录成功');
+                } catch (err) {
+                    console.error(err);
+                    showNotification('注册失败：可能是密码过短或邮箱已存在');
+                }
+            });
+
+            googleBtn.addEventListener('click', async () => {
+                if (!auth) return;
+                try {
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(auth, provider);
+                    showNotification('登录成功');
+                } catch (err) {
+                    console.error(err);
+                    showNotification('Google 登录失败，请重试');
+                }
+            });
+        }
+
+        initFirebase();
+        bindEvents();
+    </script>
+</body>
+</html>

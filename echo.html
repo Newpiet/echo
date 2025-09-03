@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>回声 (Echo) - v2.3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Focus (Beige/Off-white background, Soft Grays for text, Muted Terracotta for accents) -->
+    <!-- Application Structure Plan: A single-page, top-to-bottom linear layout guiding the user through the core "Capture -> Review -> Create" workflow. The main screen is the "Today's Card". Sparks are listed first. Reflections are added inline directly beneath their corresponding spark to maintain context. Creations are listed at the bottom, with a modal for a distraction-free writing experience. This structure was chosen because it directly mirrors the user's mental model and the product's purpose, creating an intuitive and focused journey from consumption to creation. -->
+    <!-- Visualization & Content Choices: Report Info: Core workflow (Sparks, Reflections, Creations). Goal: Organize & Create. Presentation: Interactive card list for Sparks, inline text areas for Reflections, and a modal editor for Creations. Interaction: Users add items, toggle status, and click buttons to progressively reveal the next stage of the workflow (add reflection -> start creation). Justification: This interactive, progressive disclosure approach reduces cognitive load and keeps the user focused on one step at a time, fulfilling the product's promise of a simple, guided experience. Library/Method: Vanilla JS for all interactions, Tailwind CSS for layout and styling. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { 
+            font-family: 'Noto Sans SC', sans-serif; 
+            background-color: #FDFBF8; 
+            color: #4A4A4A; 
+            background-image: radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.04) 0%, #FDFBF8 40%);
+            background-attachment: fixed;
+        }
+        .accent-color { color: #D97706; }
+        .bg-accent { background-color: #D97706; }
+        .border-accent { border-color: #D97706; }
+        .placeholder-accent::placeholder { color: #FBBF24; opacity: 0.6; }
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 50; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal-content { background: #FDFBF8; padding: 2rem; border-radius: 0.5rem; width: 90%; max-height: 90vh; overflow-y: auto; transform: scale(0.95); transition: transform 0.3s ease; }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .creation-modal-content { max-width: 800px; }
+        .settings-modal-content { max-width: 500px; }
+        .section-fade-in { opacity: 0; transform: translateY(20px); animation: fadeIn 0.6s forwards; }
+        @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+        .icon-btn { background: none; border: none; cursor: pointer; color: #9CA3AF; transition: color 0.2s; }
+        .icon-btn:hover { color: #4B5563; }
+        .confirmation-dialog { display: none; font-size: 0.875rem; color: #EF4444; }
+        .calendar-modal-content { max-width: 90vw; width: 1200px; position: relative; }
+        .calendar-day { text-align: center; padding: 0.5rem; border-radius: 0.25rem; cursor: pointer; position: relative; }
+        .calendar-day.other-month { color: #D1D5DB; cursor: default; }
+        .calendar-day:not(.other-month):hover { background-color: #FEF3C7; }
+        .calendar-day.today { background-color: #FBBF24; color: white; }
+        .calendar-day.selected { background-color: #D97706; color: white; }
+        .calendar-day .entry-dot { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; background-color: #2563EB; border-radius: 50%; }
+        .calendar-day.selected .entry-dot { background-color: white; }
+        .modal-open { overflow: hidden; }
+        #notification-toast { position: fixed; bottom: -100px; right: 2rem; background-color: #22C55E; color: white; padding: 1rem 1.5rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); transition: bottom 0.5s ease-in-out; z-index: 100; }
+        #notification-toast.show { bottom: 2rem; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="app" class="container mx-auto max-w-4xl p-4 sm:p-8 relative">
+        <div class="absolute top-8 right-8 flex items-center gap-4 z-10">
+            <button id="auth-btn" title="登录/注销" class="p-2 rounded-lg text-gray-500 hover:bg-gray-200/80 hover:text-gray-800 transition-all flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+            </button>
+            <button id="settings-btn" title="提醒设置" class="p-2 rounded-lg text-gray-500 hover:bg-gray-200/80 hover:text-gray-800 transition-all flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
+            <button id="history-btn" title="历史回顾" class="p-2 rounded-lg text-gray-500 hover:bg-gray-200/80 hover:text-gray-800 transition-all flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </button>
+            <button id="theme-btn" title="切换主题" class="p-2 rounded-lg text-gray-500 hover:bg-gray-200/80 hover:text-gray-800 transition-all flex items-center">
+                <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+            </button>
+        </div>
+
+        <header class="text-center mb-12 section-fade-in">
+            <div class="w-16 h-16 mx-auto mb-4 text-amber-600">
+                <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M32 4C48.464 4 61 16.536 61 33" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                    <path d="M32 13C43.598 13 53 22.402 53 34" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.7"/>
+                    <path d="M32 22C38.6274 22 44 27.3726 44 34" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-opacity="0.4"/>
+                </svg>
+            </div>
+            <h1 class="text-4xl font-bold accent-color tracking-wider">回声</h1>
+            <p class="text-xl font-light text-gray-500 mt-3">捕捉今日火花，回响明日创作。</p>
+            <p id="current-date" class="text-md text-gray-400 mt-4"></p>
+        </header>
+
+        <main class="space-y-16">
+             <section id="sparks-section" class="section-fade-in" style="animation-delay: 0.2s;">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold text-lg mr-4">1</div>
+                        <h2 class="text-2xl font-bold text-gray-700 dark:text-gray-50">火花 (Sparks) - 捕捉</h2>
+                    </div>
+
+                </div>
+                <div class="bg-white/60 dark:bg-gray-800 dark:border-gray-600 p-6 rounded-lg shadow-sm border border-gray-200/80">
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <div class="flex-grow relative">
+                            <textarea id="spark-input" placeholder="粘贴播客网址或输入文字摘要..." class="w-full min-h-[48px] max-h-[200px] bg-amber-50 dark:bg-gray-800 border-2 border-transparent focus:border-accent focus:ring-0 rounded-md p-3 transition-all placeholder-accent resize-none overflow-hidden" rows="1"></textarea>
+                            <div class="absolute bottom-2 right-2 text-xs text-gray-400 pointer-events-none bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded">
+                                <span id="spark-char-count">0</span>/1000
+                    </div>
+                        </div>
+                        <button id="add-spark-btn" class="bg-accent text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition-all shadow-sm self-end">添加火花</button>
+                    </div>
+
+                </div>
+                <div id="sparks-list" class="mt-8 space-y-4"></div>
+            </section>
+
+            <section id="creations-section" class="section-fade-in" style="animation-delay: 0.4s;">
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-bold text-lg mr-4">2</div>
+                        <h2 class="text-2xl font-bold text-gray-700">创作 (Creations) - 输出</h2>
+                    </div>
+                    <button id="new-creation-btn" class="text-sm bg-sky-600 text-white font-bold py-2 px-4 rounded-md hover:bg-sky-700 transition-all shadow-sm">+ 新建创作</button>
+                </div>
+                <div id="creations-list" class="bg-white/60 p-6 rounded-lg shadow-sm border border-gray-200/80 min-h-[100px]"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Creation Modal -->
+    <div id="creation-modal" class="modal-overlay">
+        <div class="modal-content creation-modal-content">
+            <input type="text" id="creation-title-input" class="text-2xl font-bold mb-2 w-full bg-transparent focus:outline-none focus:border-b-2 border-accent">
+            <div id="creation-source-block" class="text-sm text-gray-500 mb-6 p-3 bg-gray-100 rounded-md border border-gray-200">
+                <p class="font-semibold">灵感来源:</p>
+                <p id="creation-source"></p>
+            </div>
+            <textarea id="creation-editor" class="w-full h-96 p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-accent focus:border-transparent" placeholder="在这里开始你的创作..."></textarea>
+            <div id="word-count" class="text-right text-sm text-gray-500 mt-2 pr-1">字数: 0</div>
+            <div class="mt-6 flex justify-between items-center">
+                <div>
+                    <button id="delete-creation-btn" class="text-red-600 font-bold py-2 px-4 rounded-md hover:bg-red-100 transition-all">删除</button>
+                    <div id="delete-creation-confirmation" class="confirmation-dialog mt-2 flex items-center gap-2" style="display: none;">
+                        <span class="text-sm text-gray-700">确定删除？</span>
+                        <button id="confirm-delete-creation-btn" class="font-bold text-red-700 px-2 py-1 rounded-md hover:bg-red-100">是</button>
+                        <button id="cancel-delete-creation-btn" class="text-gray-600 px-2 py-1 rounded-md hover:bg-gray-200">否</button>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button id="copy-creation-btn" class="bg-gray-500 text-white font-bold py-2 px-6 rounded-md hover:bg-gray-600 transition-all">复制内容</button>
+                    <button id="close-modal-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-all">关闭</button>
+                    <button id="save-creation-btn" class="bg-accent text-white font-bold py-2 px-6 rounded-md hover:bg-amber-700 transition-all">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar Modal -->
+    <div id="calendar-modal" class="modal-overlay">
+        <div class="modal-content calendar-modal-content">
+            <!-- View 1: Calendar View -->
+            <div id="calendar-view">
+                <div class="flex justify-between items-center mb-4">
+                    <button id="prev-month-btn" class="p-2 rounded-full hover:bg-gray-200">&lt;</button>
+                    <h2 id="calendar-month-year" class="text-xl font-bold"></h2>
+                    <button id="next-month-btn" class="p-2 rounded-full hover:bg-gray-200">&gt;</button>
+                </div>
+                <div class="flex">
+                    <div class="w-2/3 pr-4">
+                        <div class="grid grid-cols-7 gap-2 text-center font-semibold text-gray-500 mb-2">
+                            <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div>
+                        </div>
+                        <div id="calendar-grid" class="grid grid-cols-7 gap-2"></div>
+                    </div>
+                    <div class="w-1/3 pl-4 border-l border-gray-200">
+                        <h3 id="selected-day-title" class="font-bold text-lg mb-4">选择一天查看记录</h3>
+                        <div id="selected-day-content" class="space-y-4 max-h-[60vh] overflow-y-auto p-1"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- View 2: Day Detail View -->
+            <div id="day-detail-view" style="display: none;">
+                 <div class="flex justify-between items-center mb-4">
+                    <button id="back-to-calendar-btn" class="text-sm font-semibold text-gray-600 hover:text-black p-2 rounded-md bg-gray-200/70">&lt; 返回日历</button>
+                    <h2 id="day-detail-title" class="text-xl font-bold"></h2>
+                </div>
+                <div id="day-detail-content" class="space-y-6 max-h-[80vh] overflow-y-auto p-2"></div>
+            </div>
+            <button id="close-calendar-btn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-content settings-modal-content">
+            <h2 class="text-xl font-bold mb-6">提醒设置</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="reminder-email" class="block text-sm font-medium text-gray-700">提醒邮箱</label>
+                    <input type="email" id="reminder-email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring-accent sm:text-sm" placeholder="your@email.com">
+                </div>
+                <div>
+                    <label for="reminder-time" class="block text-sm font-medium text-gray-700">每日提醒时间</label>
+                    <input type="time" id="reminder-time" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring-accent sm:text-sm">
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-700">启用邮件提醒</span>
+                    <label for="reminder-enabled" class="inline-flex relative items-center cursor-pointer">
+                      <input type="checkbox" id="reminder-enabled" class="sr-only peer">
+                      <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-amber-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                    </label>
+                </div>
+            </div>
+            <div class="mt-8 flex justify-end gap-4">
+                <button id="close-settings-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-6 rounded-md hover:bg-gray-300 transition-all">关闭</button>
+                <button id="save-settings-btn" class="bg-accent text-white font-bold py-2 px-6 rounded-md hover:bg-amber-700 transition-all">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Gate Modal (login prompt on first visit / when signed out) -->
+    <div id="auth-gate-modal" class="modal-overlay">
+        <div class="modal-content settings-modal-content">
+            <h2 class="text-xl font-bold mb-2">登录以启用云同步</h2>
+            <p class="text-sm text-gray-600 mb-6">使用 Google 登录可在多设备间同步"火花"和"创作"。也可先在本地模式试用。</p>
+            <div class="flex gap-3">
+                <button id="auth-gate-google-btn" class="bg-accent text-white font-bold py-2 px-4 rounded-md hover:bg-amber-700 transition-all">使用 Google 登录</button>
+                <button id="auth-gate-skip-btn" class="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-md hover:bg-gray-300 transition-all">稍后再说</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loader-overlay" class="fixed inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-50 hidden">
+        <svg class="animate-spin h-8 w-8 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+    </div>
+
+    <div id="notification-toast"></div>
+
+    <script>
+        window.__FIREBASE_CONFIG__ = {
+        apiKey: "AIzaSyAsyCB4YtVqqDbo1HacFf3jSeKVvx9wStU",
+        authDomain: "gen-lang-client-0073922535.firebaseapp.com",
+        projectId: "gen-lang-client-0073922535",
+        storageBucket: "gen-lang-client-0073922535.firebasestorage.app",
+        messagingSenderId: "692030098795",
+        appId: "1:692030098795:web:c223e7f5ebd7b05a37502e",
+        measurementId: "G-EL465MFS0F"
+        };
+      </script>
+
+    <script type="module">
+        // Firebase SDK imports
+
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
+        import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
+        import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, getDocs, getDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const APP_STORAGE_KEY = 'echo-app-state-v2.3';
+
+            const state = {
+                currentDate: new Date().toDateString(),
+                sparks: [],
+                creations: [],
+                settings: {
+                    reminderEmail: '',
+                    reminderTime: '21:00',
+                    reminderEnabled: false,
+                    lastReminderSent: null,
+                    theme: 'system', // 'light', 'dark', 'system'
+                },
+                nextSparkId: 1,
+                nextCreationId: 1,
+                editingCreationId: null,
+                calendarViewDate: new Date(),
+                user: null, // To hold user auth state
+                authGateDismissed: false,
+
+            };
+
+            // Main Page Elements
+            const sparkInput = document.getElementById('spark-input');
+            const addSparkBtn = document.getElementById('add-spark-btn');
+            const sparksList = document.getElementById('sparks-list');
+            const newCreationBtn = document.getElementById('new-creation-btn');
+            const creationsList = document.getElementById('creations-list');
+            const historyBtn = document.getElementById('history-btn');
+            const settingsBtn = document.getElementById('settings-btn');
+            const authBtn = document.getElementById('auth-btn');
+            const themeBtn = document.getElementById('theme-btn');
+            const themeIconSun = document.getElementById('theme-icon-sun');
+            const themeIconMoon = document.getElementById('theme-icon-moon');
+            
+            // Creation Modal Elements
+            const creationModal = document.getElementById('creation-modal');
+            const creationTitleInput = document.getElementById('creation-title-input');
+            const creationSourceBlock = document.getElementById('creation-source-block');
+            const creationSource = document.getElementById('creation-source');
+            const creationEditor = document.getElementById('creation-editor');
+            const wordCountEl = document.getElementById('word-count');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const saveCreationBtn = document.getElementById('save-creation-btn');
+            const copyCreationBtn = document.getElementById('copy-creation-btn');
+            const deleteCreationBtn = document.getElementById('delete-creation-btn');
+            const deleteCreationConfirmation = document.getElementById('delete-creation-confirmation');
+            const confirmDeleteCreationBtn = document.getElementById('confirm-delete-creation-btn');
+            const cancelDeleteCreationBtn = document.getElementById('cancel-delete-creation-btn');
+
+            // Calendar Modal Elements
+            const calendarModal = document.getElementById('calendar-modal');
+            const calendarView = document.getElementById('calendar-view');
+            const dayDetailView = document.getElementById('day-detail-view');
+            const closeCalendarBtn = document.getElementById('close-calendar-btn');
+            const prevMonthBtn = document.getElementById('prev-month-btn');
+            const nextMonthBtn = document.getElementById('next-month-btn');
+            const calendarMonthYear = document.getElementById('calendar-month-year');
+            const calendarGrid = document.getElementById('calendar-grid');
+            const selectedDayTitle = document.getElementById('selected-day-title');
+            const selectedDayContent = document.getElementById('selected-day-content');
+            const backToCalendarBtn = document.getElementById('back-to-calendar-btn');
+            const dayDetailTitle = document.getElementById('day-detail-title');
+            const dayDetailContent = document.getElementById('day-detail-content');
+
+            // Settings Modal Elements
+            const settingsModal = document.getElementById('settings-modal');
+            const reminderEmailInput = document.getElementById('reminder-email');
+            const reminderTimeInput = document.getElementById('reminder-time');
+            const reminderEnabledInput = document.getElementById('reminder-enabled');
+            const closeSettingsBtn = document.getElementById('close-settings-btn');
+            const saveSettingsBtn = document.getElementById('save-settings-btn');
+            const notificationToast = document.getElementById('notification-toast');
+
+            // Auth Gate Elements
+            const authGateModal = document.getElementById('auth-gate-modal');
+            const authGateGoogleBtn = document.getElementById('auth-gate-google-btn');
+            const authGateSkipBtn = document.getElementById('auth-gate-skip-btn');
+            const loaderOverlay = document.getElementById('loader-overlay');
+
+
+            // --- All function definitions go here, before init() ---
+
+            // --- START: Auth Gate Helpers ---
+            function openAuthGate() {
+                if (!authGateModal) return;
+                document.body.classList.add('modal-open');
+                authGateModal.classList.add('active');
+            }
+
+            function closeAuthGate(markDismissed = false) {
+                if (!authGateModal) return;
+                authGateModal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+                if (markDismissed) {
+                    state.authGateDismissed = true;
+                    saveState();
+                }
+            }
+
+            function maybeShowAuthGate() {
+                // 仅当未登录、未被关闭过、且（已配置 Firebase 或允许先提示再跳过）
+                if (!state.user && !state.authGateDismissed) {
+                    openAuthGate();
+                }
+            }
+            // --- END: Auth Gate Helpers ---
+            // --- START: Firebase Helpers ---
+            let firebaseApp = null;
+            let firebaseAuth = null;
+            let firestoreDb = null;
+            let unsubscribeSparks = null;
+            let unsubscribeCreations = null;
+            let initialLoadsPending = 0;
+
+            function showLoader() {
+                if (loaderOverlay) loaderOverlay.classList.remove('hidden');
+            }
+            function hideLoader() {
+                if (loaderOverlay) loaderOverlay.classList.add('hidden');
+            }
+
+            function isFirebaseConfigured() {
+                return typeof window.__FIREBASE_CONFIG__ === 'object' && window.__FIREBASE_CONFIG__ && window.__FIREBASE_CONFIG__.apiKey;
+            }
+
+            function isCloudEnabled() {
+                return !!(firebaseAuth && firestoreDb && state.user && state.user.uid);
+            }
+
+            function userSparksCol() { return collection(firestoreDb, 'users', state.user.uid, 'sparks'); }
+            function userCreationsCol() { return collection(firestoreDb, 'users', state.user.uid, 'creations'); }
+            function userSettingsDoc() { return doc(firestoreDb, 'users', state.user.uid); }
+
+            function stopCloudListeners() {
+                if (unsubscribeSparks) { unsubscribeSparks(); unsubscribeSparks = null; }
+                if (unsubscribeCreations) { unsubscribeCreations(); unsubscribeCreations = null; }
+            }
+
+            async function startCloudListeners() {
+                if (!isCloudEnabled()) return;
+
+                showLoader();
+                initialLoadsPending = 2; // Sparks and Creations
+
+                // Sparks
+                const sparksQ = query(userSparksCol(), orderBy('createdAt', 'desc'));
+                unsubscribeSparks = onSnapshot(sparksQ, (snap) => {
+                    const docs = [];
+                    snap.forEach(d => {
+                        const data = d.data();
+                        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt;
+                        docs.push({ id: d.id, type: data.type, content: data.content, title: data.title || null, status: data.status || 'todo', reflection: data.reflection || null, createdAt: createdAt });
+                    });
+                    state.sparks = docs;
+                    saveState();
+                    renderSparks();
+                    if (--initialLoadsPending <= 0) hideLoader();
+                }, (error) => {
+                    console.error("Sparks snapshot error: ", error);
+                    hideLoader();
+                });
+                // Creations
+                const creationsQ = query(userCreationsCol(), orderBy('createdAt', 'desc'));
+                unsubscribeCreations = onSnapshot(creationsQ, (snap) => {
+                    const docs = [];
+                    snap.forEach(d => {
+                        const data = d.data();
+                        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt;
+                        docs.push({ id: d.id, title: data.title, content: data.content || '', sourceSparkId: data.sourceSparkId || null, createdAt: createdAt });
+                    });
+                    state.creations = docs;
+                    saveState();
+                    renderCreations();
+                    if (--initialLoadsPending <= 0) hideLoader();
+                }, (error) => {
+                    console.error("Creations snapshot error: ", error);
+                    hideLoader();
+                });
+                // Settings (one doc)
+                try {
+                    const sDoc = await getDoc(userSettingsDoc());
+                    if (sDoc.exists()) {
+                        const data = sDoc.data();
+                        if (data && data.settings) {
+                            Object.assign(state.settings, data.settings);
+                            saveState();
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            async function migrateLocalToCloudIfNeeded() {
+                if (!isCloudEnabled()) return;
+                try {
+                    const migratedKey = `echo-cloud-migrated-${state.user.uid}`;
+                    if (localStorage.getItem(migratedKey)) return;
+                    const [sparksSnap, creationsSnap] = await Promise.all([getDocs(userSparksCol()), getDocs(userCreationsCol())]);
+                    const cloudEmpty = sparksSnap.empty && creationsSnap.empty;
+                    const localHasData = (state.sparks && state.sparks.length > 0) || (state.creations && state.creations.length > 0);
+                    if (cloudEmpty && localHasData) {
+                        const uploadSparks = state.sparks.map(s => addDoc(userSparksCol(), { type: s.type, content: s.content, title: s.title || null, status: s.status || 'todo', reflection: s.reflection || null, createdAt: s.createdAt || new Date().toISOString() }));
+                        const uploadCreations = state.creations.map(c => addDoc(userCreationsCol(), { title: c.title, content: c.content || '', sourceSparkId: c.sourceSparkId || null, createdAt: c.createdAt || new Date().toISOString() }));
+                        await Promise.all([...uploadSparks, ...uploadCreations, setDoc(userSettingsDoc(), { ...state.settings }, { merge: true })]);
+                        localStorage.setItem(migratedKey, '1');
+                        console.info('[Echo] 本地数据已迁移至云端');
+                    }
+                } catch (err) {
+                    console.error('[Echo] 数据迁移失败', err);
+                }
+            }
+
+            function initFirebase() {
+                if (!isFirebaseConfigured()) {
+                    console.info('[Echo] Firebase 未配置：在 window.__FIREBASE_CONFIG__ 设置配置对象后自动启用。');
+                    updateAuthButton();
+                    return;
+                }
+                try {
+                    firebaseApp = initializeApp(window.__FIREBASE_CONFIG__);
+                    firebaseAuth = getAuth(firebaseApp);
+                    firestoreDb = getFirestore(firebaseApp);
+                    onAuthStateChanged(firebaseAuth, async (user) => {
+                        state.user = user ? { uid: user.uid, displayName: user.displayName || '用户', email: user.email || '' } : null;
+                        updateAuthButton();
+                        if (state.user) {
+                            closeAuthGate(true);
+                            stopCloudListeners();
+                            await startCloudListeners();
+                            await migrateLocalToCloudIfNeeded();
+                        } else {
+                            stopCloudListeners();
+                        }
+                    });
+                    console.info('[Echo] Firebase 初始化完成');
+                } catch (err) {
+                    console.error('[Echo] Firebase 初始化失败', err);
+                    showNotification('Firebase 初始化失败，请检查配置', 'info');
+                }
+            }
+
+            function updateAuthButton() {
+                if (!authBtn) return;
+                if (state.user) {
+                    authBtn.title = '注销';
+                    authBtn.classList.add('text-green-700');
+                } else {
+                    authBtn.title = '登录';
+                    authBtn.classList.remove('text-green-700');
+                }
+            }
+
+            async function handleAuthButtonClick() {
+                try {
+                    if (state.user && firebaseAuth) {
+                        await signOut(firebaseAuth);
+                        showNotification('已退出登录', 'info');
+                        window.location.href = 'login.html';
+                    } else {
+                        window.location.href = 'login.html';
+                    }
+                } catch (err) {
+                    console.error('[Echo] Auth 操作失败', err);
+                    showNotification('登录/注销失败，请检查控制台', 'info');
+                }
+            }
+            // --- END: Firebase Helpers ---
+            // --- START: Theme Helpers ---
+            function isCurrentlyDark() {
+                const theme = state.settings.theme;
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                return theme === 'dark' || (theme === 'system' && prefersDark);
+            }
+
+            function applyTheme() {
+                if (isCurrentlyDark()) {
+                    document.documentElement.classList.add('dark');
+                    themeIconSun.classList.add('hidden');
+                    themeIconMoon.classList.remove('hidden');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    themeIconSun.classList.remove('hidden');
+                    themeIconMoon.classList.add('hidden');
+                }
+            }
+
+            function toggleTheme() {
+                state.settings.theme = isCurrentlyDark() ? 'light' : 'dark';
+                applyTheme();
+                saveSettings(); // This will persist to cloud if logged in
+            }
+            // --- END: Theme Helpers ---
+
+            function saveState() { localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state)); }
+            
+            function loadState() {
+                const savedState = localStorage.getItem(APP_STORAGE_KEY);
+                if (savedState) {
+                    const parsedState = JSON.parse(savedState);
+                    // Safely merge settings
+                    if (parsedState.settings) {
+                        Object.assign(state.settings, parsedState.settings);
+                        delete parsedState.settings;
+                    }
+                    Object.assign(state, parsedState);
+                    // Ensure calendarViewDate is a Date object, not a string
+                    state.calendarViewDate = new Date();
+                }
+            }
+            
+            function formatDate(dateString) { return new Date(dateString).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }); }
+            
+            function isUrl(text) { try { new URL(text); return true; } catch (_) { return false; } }
+            
+            function saveAndRender() { saveState(); renderSparks(); renderCreations(); }
+
+            function handleAddSpark() {
+                const content = sparkInput.value.trim();
+                if (!content) return;
+                
+                // 字符数验证
+                if (content.length > 1000) {
+                    showNotification('火花内容不能超过1000个字符', 'error');
+                    return;
+                }
+                
+                console.log('[DEBUG] Adding spark with content:', content);
+                console.log('[DEBUG] Cloud enabled:', isCloudEnabled());
+                console.log('[DEBUG] Current state.sparks length:', state.sparks.length);
+
+                if (isCloudEnabled()) {
+                    const newSparkData = { 
+                        type: isUrl(content) ? 'link' : 'snippet',
+                        content: content, 
+                        title: isUrl(content) ? content : null,
+                        status: 'todo', 
+                        reflection: null, 
+                        createdAt: new Date().toISOString()
+                    };
+                    // 在云模式下，先添加到本地状态以提供即时反馈
+                    const tempSpark = { 
+                        id: `temp-${Date.now()}`, 
+                        ...newSparkData 
+                    };
+                    console.log('[DEBUG] Adding temp spark to local state:', tempSpark);
+                    state.sparks.unshift(tempSpark);
+                    console.log('[DEBUG] State.sparks after adding temp:', state.sparks.length);
+                    saveAndRender();
+                    
+                    // 然后异步保存到云端
+                    console.log('[DEBUG] Saving to cloud...');
+                    addDoc(userSparksCol(), newSparkData)
+                        .then((docRef) => {
+                            // 云端保存成功后，用真实的文档ID替换临时ID
+                            const index = state.sparks.findIndex(s => s.id === tempSpark.id);
+                            if (index !== -1) {
+                                state.sparks[index].id = docRef.id;
+                                saveState();
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Add spark failed', err);
+                            // 如果云端保存失败，从本地状态中移除临时火花
+                            state.sparks = state.sparks.filter(s => s.id !== tempSpark.id);
+                            saveAndRender();
+                            showNotification('保存失败，请重试', 'error');
+                        });
+                } else {
+                    // local mode
+                    const localSpark = { 
+                        id: state.nextSparkId++, 
+                        type: isUrl(content) ? 'link' : 'snippet',
+                        content: content, 
+                        title: isUrl(content) ? content : null,
+                        status: 'todo', 
+                        reflection: null, 
+                        createdAt: new Date().toISOString()
+                    };
+                    console.log('[DEBUG] Adding local spark:', localSpark);
+                    state.sparks.unshift(localSpark);
+                    console.log('[DEBUG] State.sparks after adding local:', state.sparks.length);
+                    saveAndRender();
+                }
+                // 重置输入框
+                sparkInput.value = '';
+                sparkInput.style.height = '48px'; // 重置为初始高度
+                document.getElementById('spark-char-count').textContent = '0';
+                document.getElementById('spark-char-count').classList.remove('text-red-500');
+                
+
+                
+                // 触发input事件以确保UI更新
+                sparkInput.dispatchEvent(new Event('input'));
+            }
+            
+            function closeModal() { 
+                creationModal.classList.remove('active'); 
+                state.editingCreationId = null; 
+                document.body.classList.remove('modal-open');
+            }
+
+            function openCalendar() {
+                state.calendarViewDate = new Date();
+                showCalendarView();
+                renderCalendar();
+                document.body.classList.add('modal-open');
+                calendarModal.classList.add('active');
+            }
+            
+            function closeCalendar() { 
+                calendarModal.classList.remove('active'); 
+                document.body.classList.remove('modal-open');
+            }
+
+            function openSettings() {
+                reminderEmailInput.value = state.settings.reminderEmail;
+                reminderTimeInput.value = state.settings.reminderTime;
+                reminderEnabledInput.checked = state.settings.reminderEnabled;
+                document.body.classList.add('modal-open');
+                settingsModal.classList.add('active');
+            }
+            
+            function closeSettings() {
+                settingsModal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+            }
+            
+            function saveSettings() {
+                state.settings.reminderEmail = reminderEmailInput.value.trim();
+                state.settings.reminderTime = reminderTimeInput.value;
+                state.settings.reminderEnabled = reminderEnabledInput.checked;
+                if (isCloudEnabled()) {
+                    setDoc(userSettingsDoc(), { settings: { ...state.settings } }, { merge: true })
+                        .then(() => { showNotification('设置已保存！', 'info'); })
+                        .catch((err) => { console.error('Save settings failed', err); showNotification('设置保存失败，请重试', 'info'); })
+                        .finally(() => { saveState(); closeSettings(); });
+                } else {
+                    saveState();
+                    showNotification('设置已保存！', 'info');
+                    closeSettings();
+                }
+            }
+            
+            function showNotification(message, type = 'success') {
+                notificationToast.textContent = message;
+                let bgColor = 'bg-green-500';
+                if (type === 'error') bgColor = 'bg-red-500';
+                else if (type === 'info') bgColor = 'bg-blue-500';
+                
+                notificationToast.className = `show ${bgColor}`;
+                setTimeout(() => {
+                    notificationToast.classList.remove('show');
+                }, 4000);
+            }
+
+            function checkReminders() {
+                if (!state.settings.reminderEnabled || !state.settings.reminderTime || !state.settings.reminderEmail) return;
+                const now = new Date();
+                const todayStr = now.toDateString();
+                const [hours, minutes] = state.settings.reminderTime.split(':');
+                if (now.getHours() == hours && now.getMinutes() == minutes) {
+                    if (state.settings.lastReminderSent !== todayStr) {
+                        const todoSparks = state.sparks.filter(s => s.status === 'todo' && new Date(s.createdAt).toDateString() === todayStr);
+                        if (todoSparks.length > 0) {
+                            showNotification(`模拟邮件已发送至 ${state.settings.reminderEmail}，提醒您回顾 ${todoSparks.length} 个待学习项目。`);
+                            state.settings.lastReminderSent = todayStr;
+                            saveState();
+                        }
+                    }
+                }
+            }
+            
+            function renderSparks() {
+                // 动态获取当前日期，而不是使用可能过期的 state.currentDate
+                const currentDate = new Date().toDateString();
+                console.log('[DEBUG] Rendering sparks. Total state.sparks:', state.sparks.length);
+                console.log('[DEBUG] Current date for filtering:', currentDate);
+                sparksList.innerHTML = '';
+                let todaySparks = state.sparks.filter(s => {
+                    const sparkDate = new Date(s.createdAt).toDateString();
+                    const matches = sparkDate === currentDate;
+                    console.log('[DEBUG] Spark date:', sparkDate, 'Current date:', currentDate, 'Matches:', matches);
+                    return matches;
+                });
+                console.log('[DEBUG] Sparks for today after date filter:', todaySparks.length);
+
+
+
+                if (todaySparks.length === 0) {
+                    sparksList.innerHTML = `
+                        <div class="text-center p-8 bg-amber-50/50 rounded-lg border-2 border-dashed border-amber-200 dark:bg-gray-800 dark:border-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M15.54 5.54a3 3 0 010 4.24l-7.07 7.07a3 3 0 01-4.24 0l-1.42-1.41a3 3 0 010-4.24l7.07-7.07a3 3 0 014.24 0zM19.07 9.07a3 3 0 010 4.24l-7.07 7.07a3 3 0 01-4.24-4.24l7.07-7.07a3 3 0 014.24 0z" />
+                            </svg>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">暂无火花</h3>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">快在上方输入框捕捉一些灵感吧！</p>
+                        </div>
+                    `;
+                    return;
+                }
+                todaySparks.forEach(spark => {
+                    const sparkEl = document.createElement('div');
+                    sparkEl.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200/80 transition-all dark:bg-gray-800 dark:border-gray-600';
+                    sparkEl.dataset.sparkId = spark.id;
+
+
+                    sparkEl.innerHTML = `
+                        <div class="flex items-start justify-between">
+                            <div class="flex-grow pr-4">
+                                ${spark.type === 'link' ? 
+                                    `<a href="${spark.content}" target="_blank" class="font-semibold text-blue-600 hover:underline break-all">${spark.title || spark.content}</a>` : 
+                                    `<div class="spark-content-container" data-id="${spark.id}">
+                                        <p class="text-gray-800 dark:text-gray-100 whitespace-pre-wrap spark-content-text">${spark.content}</p>
+                                        <button class="expand-spark-btn text-sm text-blue-600 hover:text-blue-800 transition-all mt-1" data-id="${spark.id}" style="display: none;">展开查看详情</button>
+                                        <button class="collapse-spark-btn text-sm text-blue-600 hover:text-blue-800 transition-all mt-1" data-id="${spark.id}" style="display: none;">收起</button>
+                                    </div>`
+                                }
+                            </div>
+                            <div class="flex items-center flex-shrink-0 ml-2">
+                                <button data-id="${spark.id}" class="toggle-status-btn text-sm font-bold py-1 px-3 rounded-full transition-all ${spark.status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}">${spark.status === 'done' ? '✓ 已完成' : '○ 待学习'}</button>
+                                <button data-id="${spark.id}" class="delete-spark-btn icon-btn ml-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                            </div>
+                        </div>
+                        <div class="confirmation-dialog mt-3 flex justify-end items-center gap-2" style="display: none;" data-id="${spark.id}">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">确定删除？</span>
+                            <button class="confirm-delete-spark-btn px-3 py-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors" data-id="${spark.id}">确认</button>
+                            <button class="cancel-delete-spark-btn px-3 py-1 text-sm font-medium text-gray-600 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500 rounded-md transition-colors" data-id="${spark.id}">取消</button>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-200/80 dark:border-gray-600">
+                            <div class="reflection-container" data-id="${spark.id}">${spark.reflection ? renderReflection(spark) : `<button data-id="${spark.id}" class="add-reflection-btn text-sm text-amber-600 dark:text-amber-400 font-semibold hover:text-amber-800 transition-all">+ 添加回响</button>`}</div>
+                        </div>
+                    `;
+                    sparksList.appendChild(sparkEl);
+                });
+                
+                // 检查每个火花内容是否需要展开/收起功能
+                setTimeout(() => {
+                    document.querySelectorAll('.spark-content-text').forEach(textEl => {
+                        const container = textEl.closest('.spark-content-container');
+                        const expandBtn = container.querySelector('.expand-spark-btn');
+                        const collapseBtn = container.querySelector('.collapse-spark-btn');
+                        
+                        // 检查内容是否超过5行
+                        if (textEl.scrollHeight > textEl.clientHeight) {
+                            textEl.classList.add('truncated');
+                            expandBtn.style.display = 'inline-block';
+                        }
+                    });
+                }, 100);
+            }
+
+
+            
+            function renderReflection(spark) {
+                const hasCreation = state.creations.some(c => c.sourceSparkId === spark.id);
+                return `<div><p class="text-gray-600 bg-amber-50 p-3 rounded-md whitespace-pre-wrap">${spark.reflection}</p><div class="mt-2 flex items-center gap-4">${!hasCreation ? `<button data-id="${spark.id}" class="spark-creation-btn text-sm text-sky-600 font-semibold hover:text-sky-800 transition-all">✨ 启发创作</button>` : `<p class="text-sm text-sky-500 italic">已启发一篇创作</p>`}<button data-id="${spark.id}" class="edit-reflection-btn text-sm text-gray-500 font-semibold hover:text-gray-800 transition-all">编辑</button></div></div>`;
+            }
+            
+            function renderCreations() {
+                creationsList.innerHTML = '';
+                const currentDate = new Date().toDateString();
+                const todayCreations = state.creations.filter(c => new Date(c.createdAt).toDateString() === currentDate);
+                if (todayCreations.length === 0) {
+                    creationsList.innerHTML = `
+                        <div class="text-center py-8">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-10 w-10 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">暂无创作，点击"新建创作"开始吧！</p>
+                        </div>
+                    `;
+                    return;
+                }
+                const list = document.createElement('ul');
+                list.className = 'space-y-3';
+                const sortedCreations = [...todayCreations].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                sortedCreations.forEach(creation => {
+                    const item = document.createElement('li');
+                    const creationDate = new Date(creation.createdAt).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+                    item.innerHTML = `<a href="#" data-id="${creation.id}" class="edit-creation-btn block p-3 rounded-md hover:bg-sky-100 transition-all border border-sky-200/80"><div class="flex justify-between items-center"><span class="font-medium text-gray-800">${creation.title}</span><span class="text-xs text-gray-400">${creationDate}</span></div></a>`;
+                    list.appendChild(item);
+                });
+                creationsList.appendChild(list);
+            }
+            
+            function showReflectionEditor(sparkId, currentText = '') {
+                const container = sparksList.querySelector(`.reflection-container[data-id='${sparkId}']`);
+                container.innerHTML = `<textarea class="w-full p-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-accent">${currentText}</textarea><div class="mt-2"><button data-id="${sparkId}" class="save-reflection-btn text-sm bg-accent text-white font-bold py-1 px-3 rounded-md hover:bg-amber-700">保存回响</button><button data-id="${sparkId}" class="cancel-reflection-btn text-sm text-gray-500 ml-2">取消</button></div>`;
+                container.querySelector('textarea').focus();
+            }
+            
+            function handleSparksListClick(e) {
+                const button = e.target.closest('button');
+                if (!button) return;
+
+                const sparkId = button.dataset.id;
+                const spark = state.sparks.find(s => String(s.id) === String(sparkId));
+
+                if (!spark) {
+                    console.warn('Spark not found for ID:', sparkId, state.sparks.map(s => s.id));
+                    return; 
+                }
+                let shouldRender = true;
+                if (button.classList.contains('toggle-status-btn')) {
+                    const newStatus = spark.status === 'todo' ? 'done' : 'todo';
+                    if (isCloudEnabled() && spark.id && typeof spark.id === 'string') { 
+                        updateDoc(doc(userSparksCol(), spark.id), { status: newStatus }); 
+                        shouldRender = false; 
+                    }
+                    else { 
+                        spark.status = newStatus; 
+                        console.log('[DEBUG] Toggled local spark status:', sparkId, 'to:', newStatus);
+                    }
+                }
+                else if (button.classList.contains('delete-spark-btn')) { sparksList.querySelector(`.confirmation-dialog[data-id='${sparkId}']`).style.display = 'flex'; shouldRender = false; }
+                else if (button.classList.contains('confirm-delete-spark-btn')) {
+                    if (isCloudEnabled() && spark.id && typeof spark.id === 'string') { 
+                        deleteDoc(doc(userSparksCol(), spark.id)); 
+                        shouldRender = false; 
+                    }
+                    else { 
+                        // 在本地模式下，确保类型匹配的比较
+                        const sparkIdNum = parseInt(sparkId);
+                        state.sparks = state.sparks.filter(s => s.id !== sparkIdNum); 
+                        state.creations = state.creations.filter(c => c.sourceSparkId !== sparkIdNum); 
+                        console.log('[DEBUG] Deleted local spark with ID:', sparkIdNum);
+                        console.log('[DEBUG] Remaining sparks:', state.sparks.length);
+                    }
+                }
+                else if (button.classList.contains('cancel-delete-spark-btn')) { sparksList.querySelector(`.confirmation-dialog[data-id='${sparkId}']`).style.display = 'none'; shouldRender = false; }
+                else if (button.classList.contains('add-reflection-btn')) { showReflectionEditor(sparkId); shouldRender = false; }
+                else if (button.classList.contains('edit-reflection-btn')) { showReflectionEditor(sparkId, spark.reflection); shouldRender = false; }
+                else if (button.classList.contains('save-reflection-btn')) {
+                    const textarea = button.closest('.reflection-container').querySelector('textarea'); 
+                    const refText = textarea.value.trim();
+                    if (isCloudEnabled() && spark.id && typeof spark.id === 'string') { 
+                        updateDoc(doc(userSparksCol(), spark.id), { reflection: refText }); 
+                        shouldRender = false; 
+                    }
+                    else { 
+                        spark.reflection = refText; 
+                        console.log('[DEBUG] Saved reflection to local spark:', sparkId, 'reflection:', refText);
+                    }
+                }
+                else if (button.classList.contains('cancel-reflection-btn')) { /* Just re-render */ }
+                else if (button.classList.contains('spark-creation-btn')) {
+                    const newCreation = { title: `关于"${(spark.title || spark.content).substring(0, 10)}..."的思考`, content: '', sourceSparkId: spark.id, createdAt: new Date().toISOString() };
+                    if (isCloudEnabled()) {
+                        addDoc(userCreationsCol(), newCreation).then(() => {}).catch(err => console.error('Add creation failed', err));
+                    } else {
+                        const local = { id: state.nextCreationId++, ...newCreation };
+                        state.creations.push(local); 
+                        state.editingCreationId = local.id; 
+                        openCreationModal(local.id);
+                        console.log('[DEBUG] Created local creation from spark:', spark.id, 'creation ID:', local.id);
+                    }
+                }
+                else if (button.classList.contains('expand-spark-btn')) {
+                    const container = button.closest('.spark-content-container');
+                    const textEl = container.querySelector('.spark-content-text');
+                    const collapseBtn = container.querySelector('.collapse-spark-btn');
+                    
+                    textEl.classList.add('expanded');
+                    button.style.display = 'none';
+                    collapseBtn.style.display = 'inline-block';
+                    shouldRender = false;
+                }
+                else if (button.classList.contains('collapse-spark-btn')) {
+                    const container = button.closest('.spark-content-container');
+                    const textEl = container.querySelector('.spark-content-text');
+                    const expandBtn = container.querySelector('.expand-spark-btn');
+                    
+                    textEl.classList.remove('expanded');
+                    textEl.classList.add('truncated');
+                    button.style.display = 'none';
+                    expandBtn.style.display = 'inline-block';
+                    shouldRender = false;
+                }
+
+                if (shouldRender) saveAndRender();
+            }
+            
+            function handleAddStandaloneCreation() {
+                const newCreation = { title: '未命名创作', content: '', sourceSparkId: null, createdAt: new Date().toISOString() };
+                if (isCloudEnabled()) {
+                    addDoc(userCreationsCol(), newCreation).catch(err => console.error('Add creation failed', err));
+                } else {
+                    const local = { id: state.nextCreationId++, ...newCreation };
+                    state.creations.push(local); 
+                    state.editingCreationId = local.id; 
+                    openCreationModal(local.id); 
+                    saveAndRender();
+                }
+            }
+            
+            function handleCreationsListClick(e) {
+                e.preventDefault();
+                const target = e.target.closest('.edit-creation-btn');
+                if (target) { 
+                    const creationId = target.dataset.id;
+                    // 确保创作ID的类型一致性
+                    state.editingCreationId = parseInt(creationId); 
+                    openCreationModal(creationId); 
+                }
+            }
+            
+            function openCreationModal(creationId) {
+                // 确保创作ID的类型一致性
+                const creationIdNum = parseInt(creationId);
+                const creation = state.creations.find(c => c.id === creationIdNum);
+                if (!creation) {
+                    console.warn('Creation not found for ID:', creationIdNum, 'Available IDs:', state.creations.map(c => c.id));
+                    return;
+                }
+                if (creation.sourceSparkId) { 
+                    const spark = state.sparks.find(s => String(s.id) === String(creation.sourceSparkId)); 
+                    creationSource.textContent = spark ? (spark.title || spark.content) : '原始灵感已被删除'; 
+                    creationSourceBlock.style.display = 'block'; 
+                }
+                else { creationSourceBlock.style.display = 'none'; }
+                creationTitleInput.value = creation.title; 
+                creationEditor.value = creation.content; 
+                updateWordCount();
+                deleteCreationConfirmation.style.display = 'none'; 
+                document.body.classList.add('modal-open');
+                creationModal.classList.add('active'); 
+                creationTitleInput.focus();
+            }
+            
+            function handleSaveCreation() {
+                if (state.editingCreationId !== null) {
+                    const creation = state.creations.find(c => c.id === state.editingCreationId);
+                    if (!creation) return; // Safety check
+                    const newFields = { title: creationTitleInput.value.trim() || '未命名创作', content: creationEditor.value };
+                    if (isCloudEnabled() && typeof creation.id === 'string') {
+                        updateDoc(doc(userCreationsCol(), creation.id), newFields).catch(err => console.error('Update creation failed', err));
+                    } else {
+                        creation.title = newFields.title; creation.content = newFields.content;
+                        saveAndRender();
+                    }
+                    closeModal();
+                }
+            }
+            
+            function updateWordCount() { const text = creationEditor.value; const charCount = text.length; wordCountEl.textContent = `字数: ${charCount}`; }
+            
+            function handleCopyCreation() {
+                const content = creationEditor.value;
+                if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(content).then(() => { copyCreationBtn.textContent = '已复制!'; setTimeout(() => { copyCreationBtn.textContent = '复制内容'; }, 2000); }); }
+                else {
+                    const textArea = document.createElement('textarea'); textArea.value = content; document.body.appendChild(textArea);
+                    textArea.focus(); textArea.select();
+                    try { document.execCommand('copy'); copyCreationBtn.textContent = '已复制!'; setTimeout(() => { copyCreationBtn.textContent = '复制内容'; }, 2000); }
+                    catch (err) { console.error('Fallback copy failed', err); }
+                    document.body.removeChild(textArea);
+                }
+            }
+
+            // --- START: Calendar Functions ---
+            function renderCalendar() {
+                const year = state.calendarViewDate.getFullYear();
+                const month = state.calendarViewDate.getMonth();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                calendarMonthYear.textContent = `${year}年 ${month + 1}月`;
+                calendarGrid.innerHTML = '';
+
+                const firstDayOfMonth = new Date(year, month, 1);
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                // Adjust for Monday start (getDay() is 0 for Sunday)
+                let dayOfWeek = (firstDayOfMonth.getDay() + 6) % 7;
+
+                const entryDates = new Set([...state.sparks, ...state.creations].map(item => new Date(item.createdAt).toDateString()));
+
+                // Add blank cells for days before the first
+                for (let i = 0; i < dayOfWeek; i++) {
+                    const emptyCell = document.createElement('div');
+                    calendarGrid.appendChild(emptyCell);
+                }
+
+                // Add cells for each day of the month
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dayCell = document.createElement('div');
+                    const currentDate = new Date(year, month, day);
+                    dayCell.className = 'calendar-day';
+                    dayCell.textContent = day;
+                    dayCell.dataset.date = currentDate.toISOString().split('T')[0];
+
+                    if (currentDate.toDateString() === today.toDateString()) {
+                        dayCell.classList.add('today');
+                    }
+                    if (entryDates.has(currentDate.toDateString())) {
+                        dayCell.innerHTML += '<span class="entry-dot"></span>';
+                    }
+                    calendarGrid.appendChild(dayCell);
+                }
+                renderSelectedDayPreview(null); // Clear preview pane
+            }
+            
+            function renderSelectedDayPreview(dateString) {
+                if (!dateString) {
+                    selectedDayTitle.textContent = '选择一天查看记录';
+                    selectedDayContent.innerHTML = '';
+                    return;
+                }
+                const selectedDate = new Date(dateString);
+                selectedDayTitle.textContent = selectedDate.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) + ' 的记录';
+                selectedDayContent.innerHTML = '';
+
+                const sparksOnDay = state.sparks.filter(s => new Date(s.createdAt).toDateString() === selectedDate.toDateString());
+                const creationsOnDay = state.creations.filter(c => new Date(c.createdAt).toDateString() === selectedDate.toDateString());
+
+                if (sparksOnDay.length === 0 && creationsOnDay.length === 0) {
+                    selectedDayContent.innerHTML = `<p class="text-gray-500 italic">当天没有记录。</p>`;
+                } else {
+                    if (sparksOnDay.length > 0) {
+                        selectedDayContent.insertAdjacentHTML('beforeend', `<h4 class="font-semibold text-amber-600">火花 (${sparksOnDay.length})</h4>`);
+                        sparksOnDay.forEach(spark => {
+                            selectedDayContent.insertAdjacentHTML('beforeend', `<div class="text-sm p-2 bg-amber-50/70 rounded-md whitespace-pre-wrap">${spark.title || spark.content}</div>`);
+                        });
+                    }
+                    if (creationsOnDay.length > 0) {
+                        selectedDayContent.insertAdjacentHTML('beforeend', `<h4 class="font-semibold text-sky-600 mt-3">创作 (${creationsOnDay.length})</h4>`);
+                        creationsOnDay.forEach(creation => {
+                            selectedDayContent.insertAdjacentHTML('beforeend', `<div class="text-sm p-2 bg-sky-50/70 rounded-md truncate">${creation.title}</div>`);
+                        });
+                    }
+                     selectedDayContent.insertAdjacentHTML('beforeend', `<button data-date="${dateString}" class="view-day-details-btn mt-4 w-full text-center text-sm font-semibold text-blue-600 hover:underline">查看完整详情 &rarr;</button>`);
+                }
+            }
+
+            function handleCalendarGridClick(e) {
+                const target = e.target.closest('.calendar-day');
+                if (!target || !target.dataset.date) return;
+                document.querySelectorAll('.calendar-day.selected').forEach(el => el.classList.remove('selected'));
+                target.classList.add('selected');
+                renderSelectedDayPreview(target.dataset.date);
+            }
+
+            function showCalendarView() {
+                calendarView.style.display = 'block';
+                dayDetailView.style.display = 'none';
+            }
+
+            function showDayDetailView(dateString) {
+                const selectedDate = new Date(dateString);
+                dayDetailTitle.textContent = selectedDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) + ' 的完整记录';
+                dayDetailContent.innerHTML = '';
+                const sparksOnDay = state.sparks.filter(s => new Date(s.createdAt).toDateString() === selectedDate.toDateString());
+                const creationsOnDay = state.creations.filter(c => new Date(c.createdAt).toDateString() === selectedDate.toDateString());
+
+                if (sparksOnDay.length === 0 && creationsOnDay.length === 0) {
+                    dayDetailContent.innerHTML = `<p class="text-gray-500 italic">当天没有记录。</p>`;
+                } else {
+                    if (sparksOnDay.length > 0) {
+                        dayDetailContent.insertAdjacentHTML('beforeend', `<h4 class="text-lg font-bold text-amber-700 border-b-2 border-amber-200 pb-1">火花</h4>`);
+                        sparksOnDay.forEach(spark => {
+                            dayDetailContent.insertAdjacentHTML('beforeend', `<div class="p-3 bg-white rounded-lg shadow-sm mt-2"><p class="font-semibold break-all whitespace-pre-wrap">${spark.title || spark.content}</p>${spark.reflection ? `<p class="mt-2 pt-2 border-t border-gray-200 text-gray-600 italic whitespace-pre-wrap">"${spark.reflection}"</p>` : ''}</div>`);
+                        });
+                    }
+                    if (creationsOnDay.length > 0) {
+                        dayDetailContent.insertAdjacentHTML('beforeend', `<h4 class="text-lg font-bold text-sky-700 border-b-2 border-sky-200 pb-1 mt-6">创作</h4>`);
+                        creationsOnDay.forEach(creation => {
+                            dayDetailContent.insertAdjacentHTML('beforeend', `<div class="p-3 bg-white rounded-lg shadow-sm mt-2 font-semibold">${creation.title}</div>`);
+                        });
+                    }
+                }
+                calendarView.style.display = 'none';
+                dayDetailView.style.display = 'block';
+            }
+            // --- END: Calendar Functions ---
+
+            function init() {
+                loadState();
+                // 动态更新当前日期显示
+                const currentDate = new Date().toDateString();
+                document.getElementById('current-date').textContent = formatDate(currentDate);
+                
+                // Main Page Listeners
+                historyBtn.addEventListener('click', openCalendar);
+                settingsBtn.addEventListener('click', openSettings);
+                themeBtn.addEventListener('click', toggleTheme);
+                authBtn.addEventListener('click', handleAuthButtonClick);
+                addSparkBtn.addEventListener('click', handleAddSpark);
+                sparkInput.addEventListener('keypress', (e) => { 
+                    if (e.key === 'Enter' && e.shiftKey) {
+                        e.preventDefault();
+                        handleAddSpark(); 
+                    }
+                });
+                
+                // 火花输入框自适应高度和字符计数
+                sparkInput.addEventListener('input', () => {
+                    // 自适应高度
+                    sparkInput.style.height = 'auto';
+                    sparkInput.style.height = Math.min(sparkInput.scrollHeight, 200) + 'px';
+                    
+                    // 字符计数
+                    const charCount = sparkInput.value.length;
+                    const charCountEl = document.getElementById('spark-char-count');
+                    charCountEl.textContent = charCount;
+                    
+                    // 显示/隐藏字符计数
+                    if (charCount === 0) {
+                        charCountEl.parentElement.style.opacity = '0.3';
+                    } else {
+                        charCountEl.parentElement.style.opacity = '1';
+                    }
+                    
+                    // 字符数超过限制时的视觉反馈
+                    if (charCount > 1000) {
+                        charCountEl.classList.add('text-red-500');
+                        charCountEl.parentElement.classList.add('bg-red-100', 'dark:bg-red-900/20');
+                    } else {
+                        charCountEl.classList.remove('text-red-500');
+                        charCountEl.parentElement.classList.remove('bg-red-100', 'dark:bg-red-900/20');
+                    }
+                });
+                
+                // 输入框获得焦点时的优化
+                sparkInput.addEventListener('focus', () => {
+                    sparkInput.style.borderColor = '#D97706';
+                    sparkInput.style.boxShadow = '0 0 0 3px rgba(217, 119, 6, 0.1)';
+                });
+                
+                // 输入框失去焦点时的优化
+                sparkInput.addEventListener('blur', () => {
+                    sparkInput.style.borderColor = 'transparent';
+                    sparkInput.style.boxShadow = 'none';
+                });
+                
+                // 键盘事件监听，提供视觉反馈
+                sparkInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && e.shiftKey) {
+                        // Shift + Enter: 准备提交
+                        sparkInput.style.borderColor = '#059669'; // 绿色边框
+                        sparkInput.style.boxShadow = '0 0 0 3px rgba(5, 150, 105, 0.1)';
+                    }
+                });
+                
+                // 键盘事件结束，恢复默认样式
+                sparkInput.addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') {
+                        setTimeout(() => {
+                            sparkInput.style.borderColor = '#D97706';
+                            sparkInput.style.boxShadow = '0 0 0 3px rgba(217, 119, 6, 0.1)';
+                        }, 100);
+                    }
+                });
+                
+
+                
+                // 优化长文本的滚动体验
+                sparkInput.addEventListener('scroll', () => {
+                    // 当内容超出可视区域时，显示滚动指示器
+                    if (sparkInput.scrollTop > 0) {
+                        sparkInput.style.borderBottom = '2px solid #D97706';
+                    } else {
+                        sparkInput.style.borderBottom = 'none';
+                    }
+                });
+                sparksList.addEventListener('click', handleSparksListClick);
+                newCreationBtn.addEventListener('click', handleAddStandaloneCreation);
+                creationsList.addEventListener('click', handleCreationsListClick);
+
+                // Creation Modal Listeners
+                closeModalBtn.addEventListener('click', closeModal);
+                saveCreationBtn.addEventListener('click', handleSaveCreation);
+                copyCreationBtn.addEventListener('click', handleCopyCreation);
+                creationEditor.addEventListener('input', updateWordCount);
+                deleteCreationBtn.addEventListener('click', () => { 
+                    console.log('[DEBUG] Delete button clicked, editingCreationId:', state.editingCreationId);
+                    deleteCreationConfirmation.style.display = 'flex'; 
+                });
+                cancelDeleteCreationBtn.addEventListener('click', () => { deleteCreationConfirmation.style.display = 'none'; });
+                confirmDeleteCreationBtn.addEventListener('click', () => {
+                    console.log('[DEBUG] Confirm delete clicked, editingCreationId:', state.editingCreationId);
+                    console.log('[DEBUG] Current creations:', state.creations.map(c => ({ id: c.id, title: c.title })));
+                    
+                    if (state.editingCreationId !== null) {
+                        const creation = state.creations.find(c => c.id === state.editingCreationId);
+                        console.log('[DEBUG] Found creation to delete:', creation);
+                        
+                        if (isCloudEnabled() && creation && typeof creation.id === 'string') {
+                            console.log('[DEBUG] Deleting from cloud...');
+                            deleteDoc(doc(userCreationsCol(), creation.id)).catch(err => console.error('Delete creation failed', err));
+                        } else {
+                            // 在本地模式下，确保类型匹配的比较
+                            const creationIdNum = parseInt(state.editingCreationId);
+                            console.log('[DEBUG] Deleting from local, creationIdNum:', creationIdNum);
+                            const beforeCount = state.creations.length;
+                            state.creations = state.creations.filter(c => c.id !== creationIdNum);
+                            const afterCount = state.creations.length;
+                            console.log('[DEBUG] Deleted local creation with ID:', creationIdNum);
+                            console.log('[DEBUG] Creations count: before=', beforeCount, 'after=', afterCount);
+                            saveAndRender();
+                        }
+                        closeModal();
+                    } else {
+                        console.warn('[DEBUG] No editingCreationId set');
+                    }
+                });
+
+                // Calendar Modal Listeners
+                closeCalendarBtn.addEventListener('click', closeCalendar);
+                prevMonthBtn.addEventListener('click', () => { state.calendarViewDate.setMonth(state.calendarViewDate.getMonth() - 1); renderCalendar(); });
+                nextMonthBtn.addEventListener('click', () => { state.calendarViewDate.setMonth(state.calendarViewDate.getMonth() + 1); renderCalendar(); });
+                calendarGrid.addEventListener('click', handleCalendarGridClick);
+                selectedDayContent.addEventListener('click', (e) => {
+                    const button = e.target.closest('.view-day-details-btn');
+                    if (button) {
+                        showDayDetailView(button.dataset.date);
+                    }
+                });
+                backToCalendarBtn.addEventListener('click', showCalendarView);
+
+                // Settings Modal Listeners
+                closeSettingsBtn.addEventListener('click', closeSettings);
+                saveSettingsBtn.addEventListener('click', saveSettings);
+                
+                saveAndRender();
+                setInterval(checkReminders, 60000);
+                
+                // 每分钟检查一次日期变化，确保跨天后页面能正确显示
+                setInterval(() => {
+                    const currentDate = new Date().toDateString();
+                    if (currentDate !== state.currentDate) {
+                        state.currentDate = currentDate;
+                        document.getElementById('current-date').textContent = formatDate(currentDate);
+                        saveAndRender(); // 重新渲染以显示新日期的内容
+                    }
+                }, 60000);
+                
+                // Initialize Firebase if configured
+                initFirebase();
+                updateAuthButton();
+                applyTheme(); // Apply theme on initial load
+
+                // Auth Gate Listeners & initial show
+                if (authGateGoogleBtn) {
+                    authGateGoogleBtn.addEventListener('click', handleAuthButtonClick);
+                }
+                if (authGateSkipBtn) {
+                    authGateSkipBtn.addEventListener('click', () => closeAuthGate(true));
+                }
+                // 独立登录页已提供，无需首页弹出登录引导
+
+                // Add global keyboard listeners
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        if (creationModal.classList.contains('active')) closeModal();
+                        if (calendarModal.classList.contains('active')) closeCalendar();
+                        if (settingsModal.classList.contains('active')) closeSettings();
+                        if (authGateModal.classList.contains('active')) closeAuthGate(true);
+                    }
+
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        if (creationModal.classList.contains('active')) {
+                            e.preventDefault();
+                            handleSaveCreation();
+                        }
+                    }
+                });
+
+
+
+
+            }
+            
+            init();
+        });
+    </script>
+</body>
+</html>
+<script>
+  // Enable Tailwind Dark Mode
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        // Your custom theme extensions
+      }
+    }
+  }
+</script>
+<style>
+/* Custom Dark Mode Styles */
+.dark body {
+    background-color: #1a202c; /* gray-900 */
+    color: #cbd5e0; /* gray-400 */
+    background-image: radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.05) 0%, #1a202c 40%);
+}
+.dark .accent-color {
+    color: #f59e0b; /* amber-400 */
+}
+.dark .bg-white, .dark .bg-white\/60, .dark .bg-white\/70 {
+    background-color: #2d3748; /* gray-800 */
+    border-color: #4a5568; /* gray-600 */
+}
+.dark .text-gray-400 { color: #718096; } /* gray-500 */
+.dark .text-gray-500 { color: #a0aec0; } /* gray-400 */
+.dark .text-gray-600 { color: #e2e8f0; } /* gray-200 */
+.dark .text-gray-700 { color: #f7fafc; } /* gray-50 */
+.dark .text-gray-800 { color: #edf2f7; } /* gray-100 */
+
+.dark .border-gray-200\/80 { border-color: #4a5568; } /* gray-600 */
+.dark .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.25); }
+.dark .hover\:bg-gray-200\/80:hover { background-color: #4a5568; } /* gray-600 */
+.dark .hover\:bg-gray-300:hover { background-color: #4a5568; }
+.dark .hover\:text-gray-800:hover { color: #f7fafc; }
+
+/* Inputs & Buttons */
+.dark #spark-input { background-color: #2d3748; }
+
+/* Spark Input Optimization */
+#spark-input {
+    font-family: inherit;
+    line-height: 1.5;
+    transition: all 0.2s ease-in-out;
+}
+
+/* Spark Content Display Optimization */
+.whitespace-pre-wrap {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Optimize line height for multi-line content */
+.whitespace-pre-wrap p {
+    line-height: 1.6;
+    margin-bottom: 0.5rem;
+}
+
+.whitespace-pre-wrap p:last-child {
+    margin-bottom: 0;
+}
+
+/* Spark Content Height Limitation */
+.spark-content-text {
+    max-height: 7.5rem; /* 约5行文字的高度 (1.5rem * 5) */
+    overflow: hidden;
+    position: relative;
+    transition: max-height 0.3s ease-in-out;
+}
+
+.spark-content-text.expanded {
+    max-height: none;
+}
+
+.spark-content-text.truncated::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1.5rem;
+    background: linear-gradient(transparent, white);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.dark .spark-content-text.truncated::after {
+    background: linear-gradient(transparent, rgb(31, 41, 55));
+}
+
+.spark-content-text.expanded::after {
+    opacity: 0;
+}
+
+/* Expand/Collapse Button Styling */
+.expand-spark-btn, .collapse-spark-btn {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    transition: all 0.2s ease-in-out;
+}
+
+.expand-spark-btn:hover, .collapse-spark-btn:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+
+
+#spark-input:focus {
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+}
+
+#spark-input::placeholder {
+    color: #FBBF24;
+    opacity: 0.6;
+}
+
+.dark #spark-input::placeholder {
+    color: #f59e0b;
+    opacity: 0.6;
+}
+.dark .bg-amber-50 { background-color: rgba(251, 191, 36, 0.1); }
+.dark .bg-amber-100 { background-color: rgba(251, 191, 36, 0.2); }
+.dark .text-amber-600 { color: #f59e0b; }
+.dark .bg-sky-100 { background-color: rgba(56, 189, 248, 0.2); }
+.dark .text-sky-600 { color: #38bdf8; }
+.dark .hover\:bg-sky-100:hover { background-color: #374151; } /* gray-700 */
+.dark .border-sky-200\/80 { border-color: #4a5568; }
+
+/* Modals */
+.dark .modal-content { background-color: #2d3748; }
+.dark #creation-title-input { color: #f7fafc; }
+.dark .bg-gray-100 { background-color: #1a202c; }
+.dark .border-gray-300 { border-color: #4a5568; }
+.dark #creation-editor { background-color: #2d3748; color: #f7fafc; }
+.dark input[type="email"], .dark input[type="time"] {
+    background-color: #2d3748;
+    color: #f7fafc;
+    border-color: #4a5568;
+}
+.dark .peer-checked\:bg-accent { background-color: #f59e0b; }
+
+/* Calendar */
+.dark .calendar-day:not(.other-month):hover { background-color: #4a5568; }
+.dark .calendar-day.today { background-color: #f59e0b; color: #1a202c; }
+.dark .calendar-day.selected { background-color: #d97706; color: white; }
+.dark .border-l { border-color: #4a5568; }
+.dark .bg-amber-50\/70, .dark .bg-sky-50\/70 { background-color: #374151; }
+.dark .border-amber-200, .dark .border-sky-200 { border-color: #4a5568; }
+
+/* Custom switch for dark mode */
+.dark .w-11.h-6.bg-gray-200 { background-color: #4a5568; }
+
+</style>
