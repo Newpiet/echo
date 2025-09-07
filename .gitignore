@@ -1,1 +1,10 @@
-node_modules/
+# Dependencies
+/node_modules
+/api/node_modules
+
+# Vercel
+.vercel
+
+# Environment variables
+.env
+.env*.local
