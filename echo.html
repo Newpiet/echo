@@ -961,18 +961,15 @@
                 const target = e.target.closest('.edit-creation-btn');
                 if (target) { 
                     const creationId = target.dataset.id;
-                    // 确保创作ID的类型一致性
-                    state.editingCreationId = parseInt(creationId); 
+                    state.editingCreationId = creationId; 
                     openCreationModal(creationId); 
                 }
             }
             
             function openCreationModal(creationId) {
-                // 确保创作ID的类型一致性
-                const creationIdNum = parseInt(creationId);
-                const creation = state.creations.find(c => c.id === creationIdNum);
+                const creation = state.creations.find(c => c.id == creationId);
                 if (!creation) {
-                    console.warn('Creation not found for ID:', creationIdNum, 'Available IDs:', state.creations.map(c => c.id));
+                    console.warn('Creation not found for ID:', creationId, 'Available IDs:', state.creations.map(c => c.id));
                     return;
                 }
                 if (creation.sourceSparkId) { 
@@ -992,7 +989,7 @@
             
             function handleSaveCreation() {
                 if (state.editingCreationId !== null) {
-                    const creation = state.creations.find(c => c.id === state.editingCreationId);
+                    const creation = state.creations.find(c => c.id == state.editingCreationId);
                     if (!creation) return; // Safety check
                     const newFields = { title: creationTitleInput.value.trim() || '未命名创作', content: creationEditor.value };
                     if (isCloudEnabled() && typeof creation.id === 'string') {
@@ -1242,7 +1239,7 @@
                     console.log('[DEBUG] Current creations:', state.creations.map(c => ({ id: c.id, title: c.title })));
                     
                     if (state.editingCreationId !== null) {
-                        const creation = state.creations.find(c => c.id === state.editingCreationId);
+                        const creation = state.creations.find(c => c.id == state.editingCreationId);
                         console.log('[DEBUG] Found creation to delete:', creation);
                         
                         if (isCloudEnabled() && creation && typeof creation.id === 'string') {
@@ -1250,13 +1247,10 @@
                             deleteDoc(doc(userCreationsCol(), creation.id)).catch(err => console.error('Delete creation failed', err));
                         } else {
                             // 在本地模式下，确保类型匹配的比较
-                            const creationIdNum = parseInt(state.editingCreationId);
-                            console.log('[DEBUG] Deleting from local, creationIdNum:', creationIdNum);
-                            const beforeCount = state.creations.length;
-                            state.creations = state.creations.filter(c => c.id !== creationIdNum);
+                            state.creations = state.creations.filter(c => c.id != state.editingCreationId);
                             const afterCount = state.creations.length;
-                            console.log('[DEBUG] Deleted local creation with ID:', creationIdNum);
-                            console.log('[DEBUG] Creations count: before=', beforeCount, 'after=', afterCount);
+                            console.log('[DEBUG] Deleted local creation with ID:', state.editingCreationId);
+                            console.log('[DEBUG] Creations count: before=', state.creations.length, 'after=', afterCount);
                             saveAndRender();
                         }
                         closeModal();
